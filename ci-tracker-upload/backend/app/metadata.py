@@ -5,6 +5,7 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
+from .language_detection import detect_language
 from .models import Video
 from .timeutils import utcnow
 from .youtube import VideoMetadata, YouTubeError
@@ -25,6 +26,14 @@ def apply_metadata(video: Video, meta: VideoMetadata) -> None:
     video.thumbnail_url = meta.thumbnail_url
     video.description = meta.description
     video.detected_language = meta.language
+    update_text_language(video)
+
+
+def update_text_language(video: Video) -> None:
+    """(Re)calcula el idioma detectado por texto a partir de título + descripción (v0.6)."""
+    detection = detect_language(" ".join(filter(None, [video.title, video.description])))
+    video.text_language = detection.language if detection else None
+    video.text_language_confidence = detection.confidence if detection else None
 
 
 def refresh_video_metadata(db: Session, video: Video, client: MetadataClient | None, force: bool = False) -> bool:

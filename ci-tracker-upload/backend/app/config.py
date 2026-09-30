@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     native_language: str = "es"
     # Si un video no tiene puntaje, usar el promedio de los puntajes manuales de su canal.
     channel_comprehensibility_fallback: bool = True
+    # Un día cuenta para el streak si se vio al menos esto (v0.5).
+    streak_threshold_seconds: float = 60.0
 
     # Reglas para reconstruir segmentos a partir de eventos (ver segments.py).
     max_sample_gap_seconds: float = 120.0

@@ -42,7 +42,10 @@ class Video(Base):
     published_at: Mapped[datetime | None]
     thumbnail_url: Mapped[str | None] = mapped_column(String(500))
     description: Mapped[str | None] = mapped_column(Text)
-    detected_language: Mapped[str | None] = mapped_column(String(16))
+    detected_language: Mapped[str | None] = mapped_column(String(16))  # metadata de YouTube
+    caption_language: Mapped[str | None] = mapped_column(String(16))  # subtítulos automáticos = audio (v0.6)
+    text_language: Mapped[str | None] = mapped_column(String(16))  # detector por título/descr. (v0.6)
+    text_language_confidence: Mapped[float | None] = mapped_column(Float)
     metadata_fetched_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
@@ -120,4 +123,19 @@ class UserVideoSettings(Base):
     notes: Mapped[str | None] = mapped_column(Text)
 
     video: Mapped[Video] = relationship(back_populates="settings")
+    language: Mapped[Language | None] = relationship()
+
+
+class Goal(Base):
+    """Objetivo definido por el usuario (v0.5). No pretende ser lingüísticamente óptimo."""
+
+    __tablename__ = "goals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    language_id: Mapped[int | None] = mapped_column(ForeignKey("languages.id"))  # None = todos los idiomas
+    period: Mapped[str] = mapped_column(String(16))  # total | daily
+    metric: Mapped[str] = mapped_column(String(16), default="content")  # content | effective_ci
+    target_seconds: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
     language: Mapped[Language | None] = relationship()

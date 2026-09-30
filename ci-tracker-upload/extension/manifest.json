@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Comprehensible Input Tracker",
-  "version": "0.2.0",
+  "version": "0.7.0",
   "description": "Registra automáticamente el tiempo realmente visto en YouTube y lo envía a tu backend local.",
   "minimum_chrome_version": "111",
   "permissions": ["storage", "alarms"],

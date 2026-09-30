@@ -1,5 +1,64 @@
 # Changelog
 
+## v0.7 — Analytics
+- Nueva pestaña **Análisis**, filtrable por idioma:
+  - exposición por idioma (%);
+  - contenido vs. tiempo real ("ganado por velocidad");
+  - canales que más horas aportan;
+  - tipo de contenido;
+  - velocidad de reproducción;
+  - subtítulos y comprensibilidad (que se mudan acá desde el Resumen).
+- **Tipo de contenido**: se asigna en Videos → Detalle, y los otros videos del canal lo heredan.
+- **API**: `GET /stats/channels`, `/stats/content-types`, `/stats/speeds` (esquema genérico
+  `GroupStats`). `DailyTotal` ahora también separa por velocidad.
+- **Backend**: `api.py` se reemplaza por `routes/` (events, videos, stats, goals + deps).
+  **Borrá `backend/app/api.py` del repo en GitHub.**
+- **Dashboard**: partido en `ui.py` + `views/` (una vista por pestaña). Paleta categórica
+  colorblind-safe con color fijo por idioma.
+
+## v0.6 — Detección automática de idioma
+- Dos fuentes nuevas, sin IA ni dependencias:
+  - **subtítulos automáticos (ASR)**: su idioma es el del audio; `page_bridge.js` lo lee de
+    `player.getPlayerResponse()` aunque los subtítulos estén apagados y lo manda como
+    `audio_language_hint`;
+  - **texto**: `language_detection.py` analiza título + descripción por alfabeto y palabras
+    funcionales frecuentes. Es conservador.
+- Orden de resolución: manual → YouTube → subtítulos automáticos → canal → texto.
+- Columnas nuevas en `videos`: `caption_language`, `text_language`,
+  `text_language_confidence` (migración automática).
+- `POST /admin/rebuild` también recalcula el idioma por texto de videos ya registrados.
+
+## v0.5 — Objetivos y streaks
+- **Streaks** globales y por idioma (`GET /stats/streaks`). Umbral: `STREAK_THRESHOLD_SECONDS`.
+- **Objetivos** totales o diarios, por idioma o para todos, sobre contenido o CI efectivo
+  (`GET/POST /goals`, `DELETE /goals/{id}`). Los diarios informan días cumplidos (30 d) y racha.
+- **Calendario** tipo GitHub del último año en Evolución.
+- Tabla nueva `goals` (se crea sola).
+
+## v0.4 — CI efectivo
+
+### Qué hace
+`CI efectivo = contenido visto × comprensibilidad`. Es una métrica personal y aproximada, que
+se muestra siempre rotulada *estimado* y separada del tiempo realmente visto.
+
+- Se calcula sobre el **contenido** (no el tiempo real): 60 min a 1.5x con 80 % dan 48 min.
+- El tiempo **sin puntaje no suma**. La **cobertura** (`rated_content_seconds / content_seconds`)
+  muestra sobre cuánto se calculó. Los puntajes estimados por canal sí cuentan.
+
+### Cambios
+- **API**:
+  - `PeriodTotals` (y por lo tanto summary, languages, subtitles y comprehensibility) y
+    `DailyPoint` suman `effective_ci_seconds` y `rated_content_seconds`;
+  - `VideoOut` incluye `effective_ci_seconds` (`null` sin puntaje).
+- **Backend**: el cálculo está en un solo lugar (`DailyTotal.effective_ci_seconds`) y se
+  acumula con `_accumulate` en todas las agregaciones.
+- **Dashboard**:
+  - métrica "CI efectivo (estimado)" en el Resumen;
+  - columnas de CI efectivo y cobertura por idioma;
+  - selector "Contenido visto / CI efectivo" en el gráfico;
+  - columna en la tabla de videos y línea en el detalle.
+- Sin cambios de esquema ni de extensión.
+
 ## v0.3 — Comprensibilidad
 
 ### Qué hace

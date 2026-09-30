@@ -10,10 +10,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy import Engine
 
-from .api import router
 from .config import Settings, get_settings
 from .database import init_db, make_engine, make_session_factory
 from .metadata import MetadataClient
+from .routes import ROUTERS
 from .youtube import YouTubeClient
 
 logger = logging.getLogger(__name__)
@@ -43,11 +43,12 @@ def create_app(
         yield
         engine.dispose()
 
-    app = FastAPI(title="Comprehensible Input Tracker", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Comprehensible Input Tracker", version="0.7.0", lifespan=lifespan)
     app.state.settings = settings
     app.state.session_factory = make_session_factory(engine)
     app.state.metadata_client = metadata_client if metadata_client is not None else _default_metadata_client(settings)
-    app.include_router(router)
+    for router in ROUTERS:
+        app.include_router(router)
     return app
 
 

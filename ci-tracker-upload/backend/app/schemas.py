@@ -59,6 +59,10 @@ class WatchEventIn(BaseModel):
     page_title: str | None = Field(default=None, max_length=300)
     subtitles_on: bool | None = Field(default=None, description="None = no se pudo detectar.")
     subtitle_language: str | None = Field(default=None, max_length=35, pattern=r"^[A-Za-z0-9_-]+$")
+    audio_language_hint: str | None = Field(
+        default=None, max_length=35, pattern=r"^[A-Za-z0-9_-]+$",
+        description="Idioma de los subtítulos automáticos (ASR) de YouTube = idioma del audio (v0.6).",
+    )
 
 
 class WatchBatchIn(BaseModel):
@@ -106,13 +110,18 @@ class VideoOut(BaseModel):
     thumbnail_url: str | None
     published_at: datetime | None
     detected_language: str | None
+    caption_language: str | None
+    text_language: str | None
     language: str | None = Field(description="Idioma efectivo usado en estadísticas.")
-    language_source: str | None = Field(description="manual | youtube | channel")
+    language_source: str | None = Field(description="manual | youtube | captions | channel | text")
+    content_type: str | None = Field(description="Tipo de contenido efectivo.")
+    content_type_source: str | None = Field(description="manual | channel")
     settings: VideoSettingsOut | None
     comprehensibility: float | None = Field(description="Puntaje efectivo 0-1 (subjetivo).")
     comprehensibility_source: str | None = Field(description="manual | channel (estimado)")
     content_seconds: float = Field(description="Contenido consumido (deduplicado por día).")
     wall_clock_seconds: float
+    effective_ci_seconds: float | None = Field(description="ESTIMADO; None si el video no tiene puntaje.")
     coverage_seconds: float = Field(description="Porción distinta del video vista alguna vez.")
     completion: float | None
     last_watched_at: datetime | None
@@ -146,6 +155,12 @@ class VideoDetailOut(VideoOut):
 class PeriodTotals(BaseModel):
     content_seconds: float = 0.0
     wall_clock_seconds: float = 0.0
+    effective_ci_seconds: float = Field(
+        default=0.0, description="ESTIMADO: contenido × comprensibilidad. Métrica personal, no científica."
+    )
+    rated_content_seconds: float = Field(
+        default=0.0, description="Parte de content_seconds con puntaje (sobre la que se calcula el CI efectivo)."
+    )
 
 
 class PeriodBreakdown(BaseModel):
@@ -169,6 +184,55 @@ class ComprehensibilityStats(PeriodBreakdown):
     bucket: ComprehensibilityBucket
 
 
+class GroupStats(PeriodBreakdown):
+    """Desglose genérico (canal, tipo de contenido, velocidad) (v0.7)."""
+
+    key: str
+    name: str
+    videos: int
+
+
+# ---------- Streaks y objetivos (v0.5) ----------
+
+class StreakOut(BaseModel):
+    language: str | None
+    threshold_seconds: float
+    current_days: int = Field(description="Días seguidos que cumplen el umbral, hasta hoy (o ayer si hoy aún no).")
+    longest_days: int
+    today_counts: bool
+    last_active_day: date | None
+
+
+class GoalPeriod(str, Enum):
+    total = "total"
+    daily = "daily"
+
+
+class GoalMetric(str, Enum):
+    content = "content"
+    effective_ci = "effective_ci"
+
+
+class GoalIn(BaseModel):
+    language: str | None = Field(default=None, max_length=16, description="None = todos los idiomas.")
+    period: GoalPeriod
+    metric: GoalMetric = GoalMetric.content
+    target_seconds: float = Field(gt=0, le=10_000 * 3600)
+
+
+class GoalOut(BaseModel):
+    id: int
+    language: str | None
+    period: GoalPeriod
+    metric: GoalMetric
+    target_seconds: float
+    current_seconds: float = Field(description="Total acumulado (total) o lo de hoy (daily).")
+    progress: float = Field(description="current / target (puede superar 1).")
+    met: bool
+    days_met_last_30: int | None = Field(description="Sólo objetivos diarios.")
+    streak: StreakOut | None = Field(description="Sólo objetivos diarios: días seguidos cumpliéndolo.")
+
+
 class SummaryOut(BaseModel):
     timezone: str
     today: date
@@ -182,3 +246,5 @@ class DailyPoint(BaseModel):
     language: str
     content_seconds: float
     wall_clock_seconds: float
+    effective_ci_seconds: float = 0.0
+    rated_content_seconds: float = 0.0

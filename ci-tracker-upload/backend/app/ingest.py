@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from .metadata import update_text_language
 from .models import Video, ViewingSession, WatchedSegment, WatchEvent
 from .schemas import WatchEventIn
 from .segments import ReconstructionRules, Sample, build_segments, union_length
@@ -102,12 +103,24 @@ def rebuild_session(db: Session, session: ViewingSession, rules: ReconstructionR
 
 
 def rebuild_all_sessions(db: Session, rules: ReconstructionRules) -> int:
-    """Reprocesa todas las sesiones desde los eventos crudos (tras cambiar el algoritmo)."""
+    """Reprocesa todas las sesiones desde los eventos crudos y recalcula el idioma por texto."""
     sessions = db.scalars(select(ViewingSession)).all()
     for session in sessions:
         rebuild_session(db, session, rules)
+    for video in db.scalars(select(Video)):
+        update_text_language(video)
     db.commit()
     return len(sessions)
+
+
+def _apply_video_hints(video: Video, group: list[WatchEventIn]) -> None:
+    """Pistas que manda la extensión: título de la pestaña y idioma de los subtítulos automáticos."""
+    if video.title is None and group[-1].page_title:
+        video.title = group[-1].page_title  # fallback hasta tener metadata oficial
+        update_text_language(video)
+    hints = [e.audio_language_hint for e in group if e.audio_language_hint]
+    if hints:
+        video.caption_language = normalize_language_code(hints[-1])
 
 
 def ingest_batch(db: Session, events: list[WatchEventIn], rules: ReconstructionRules, now: datetime) -> IngestResult:
@@ -123,8 +136,7 @@ def ingest_batch(db: Session, events: list[WatchEventIn], rules: ReconstructionR
         video = get_or_create_video(db, source, video_id)
         if video.metadata_fetched_at is None:
             result.videos_needing_metadata.add(video.id)
-        if video.title is None and group[-1].page_title:
-            video.title = group[-1].page_title  # fallback hasta tener metadata oficial
+        _apply_video_hints(video, group)
 
         first_at = min(to_utc_naive(e.timestamp) for e in group)
         session = _get_or_create_session(db, client_session_id, video, first_at)

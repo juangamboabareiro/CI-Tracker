@@ -134,6 +134,25 @@ def test_comprehensibility_distribution():
     assert everything["unrated"] == 100
 
 
+def test_effective_ci_is_content_times_score_and_excludes_unrated():
+    segments = {
+        1: [Segment(0, 3600, 1.5, T, 2400)],  # 60 min de contenido a 1.5x
+        2: [Segment(0, 600, 1.0, T, 600)],  # sin puntaje
+    }
+    contexts = {
+        1: VideoContext(ResolvedLanguage("fr", "manual"), comprehensibility=0.8),
+        2: VideoContext(ResolvedLanguage("fr", "manual")),
+    }
+    totals = daily_totals_from_segments(segments, contexts, UTC)
+    today = overall_stats(totals, TODAY).today
+    assert today.content_seconds == pytest.approx(4200)
+    assert today.effective_ci_seconds == pytest.approx(3600 * 0.8)  # 48 min: se usa contenido, no tiempo real
+    assert today.rated_content_seconds == pytest.approx(3600)
+
+    points = daily_series(totals, TODAY, TODAY)
+    assert points[0].effective_ci_seconds == pytest.approx(2880)
+
+
 def test_manual_override_wins_over_detection():
     segments = {1: [Segment(0, 300, 1.0, T, 300, subtitles_on=False)]}
     totals = daily_totals_from_segments(segments, {1: ctx("fr", override="target_language")}, UTC)

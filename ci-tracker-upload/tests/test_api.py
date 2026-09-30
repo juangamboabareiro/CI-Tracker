@@ -193,9 +193,112 @@ def test_comprehensibility_manual_channel_estimate_and_clear(client):
     assert cleared["comprehensibility_source"] == "channel"
 
 
+def test_effective_ci_in_video_and_summary(client):
+    post(client, Player(recent_start()).play(600).pause().as_events("vid00000017", "session-eff17"))
+    assert client.get("/videos/vid00000017").json()["effective_ci_seconds"] is None  # sin puntaje
+
+    client.patch("/videos/vid00000017/settings", json={"language": "it", "comprehensibility_score": 0.75})
+    assert client.get("/videos/vid00000017").json()["effective_ci_seconds"] == pytest.approx(450)
+    italian = next(s for s in client.get("/stats/summary").json()["languages"] if s["language"] == "it")
+    assert italian["all_time"]["effective_ci_seconds"] == pytest.approx(450)
+    assert italian["all_time"]["rated_content_seconds"] == pytest.approx(600)
+    assert italian["all_time"]["content_seconds"] == pytest.approx(600)  # el tiempo visto no cambia
+
+
 def test_comprehensibility_score_is_validated(client):
     post(client, Player(recent_start()).play(60).pause().as_events("vid00000016", "session-cmp16"))
     assert client.patch("/videos/vid00000016/settings", json={"comprehensibility_score": 1.5}).status_code == 422
+
+
+def test_goals_crud_and_progress(client):
+    post(client, Player(recent_start()).play(1800).pause().as_events("vid00000018", "session-goal18"))
+    client.patch("/videos/vid00000018/settings", json={"language": "fr"})
+
+    r = client.post("/goals", json={"language": "fr", "period": "total", "target_seconds": 3600})
+    assert r.status_code == 201
+    goal = r.json()
+    assert goal["current_seconds"] == pytest.approx(1800) and goal["progress"] == pytest.approx(0.5)
+
+    client.post("/goals", json={"language": "fr", "period": "daily", "target_seconds": 60})
+    goals = client.get("/goals").json()
+    assert len(goals) == 2
+    daily = next(g for g in goals if g["period"] == "daily")
+    assert daily["met"] and daily["streak"]["today_counts"]
+
+    assert client.delete(f"/goals/{goal['id']}").status_code == 204
+    assert len(client.get("/goals").json()) == 1
+    assert client.delete("/goals/9999").status_code == 404
+    assert client.post("/goals", json={"language": "xx", "period": "daily", "target_seconds": 60}).status_code == 422
+
+
+def test_streaks_endpoint(client):
+    post(client, Player(recent_start()).play(120).pause().as_events("vid00000019", "session-str19"))
+    client.patch("/videos/vid00000019/settings", json={"language": "de"})
+    streaks = client.get("/stats/streaks").json()
+    assert streaks[0]["language"] is None and streaks[0]["current_days"] == 1
+    german = next(s for s in streaks if s["language"] == "de")
+    assert german["current_days"] == 1 and german["longest_days"] == 1
+    # Con un umbral más alto que lo visto, el día no cuenta.
+    assert client.get("/stats/streaks", params={"threshold_seconds": 600}).json()[0]["current_days"] == 0
+
+
+def test_caption_hint_sets_language_automatically(client):
+    events = Player(recent_start()).play(60).pause().as_events("vid00000020", "session-cap20")
+    for e in events:
+        e["audio_language_hint"] = "ru"
+    post(client, events)
+    video = client.get("/videos/vid00000020").json()
+    assert video["caption_language"] == "ru"
+    assert video["language"] == "ru" and video["language_source"] == "captions"
+
+
+class NoMetadataYouTube:
+    """Simula un video sin metadata disponible: el título queda el de la pestaña."""
+
+    def fetch_video(self, video_id: str) -> None:
+        return None
+
+
+def test_text_detection_from_page_title_when_no_metadata():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    app = create_app(settings=Settings(timezone="UTC"), engine=engine, metadata_client=NoMetadataYouTube())
+    with TestClient(app) as c:
+        events = Player(recent_start()).play(60).pause().as_events("vid00000021", "session-txt21")
+        for e in events:
+            e["page_title"] = "Qu'est-ce que les Français pensent de la vie dans une grande ville"
+        post(c, events)
+        video = c.get("/videos/vid00000021").json()
+        assert video["text_language"] == "fr"
+        assert video["language"] == "fr" and video["language_source"] == "text"
+
+        # Una asignación manual siempre gana sobre la detección.
+        c.patch("/videos/vid00000021/settings", json={"language": "it"})
+        assert c.get("/videos/vid00000021").json()["language_source"] == "manual"
+
+
+def test_analytics_endpoints(client):
+    p = Player(recent_start()).play(600).set_rate(1.5).play(900).pause()
+    post(client, p.as_events("vid00000022", "session-ana22"))
+    client.patch("/videos/vid00000022/settings", json={"language": "fr", "content_type": "podcast"})
+
+    channels = client.get("/stats/channels").json()
+    assert channels[0]["name"] == "Easy French" and channels[0]["videos"] >= 1
+
+    types = {t["key"]: t for t in client.get("/stats/content-types").json()}
+    assert types["podcast"]["all_time"]["content_seconds"] == pytest.approx(1500)
+
+    speeds = {s["key"]: s["all_time"] for s in client.get("/stats/speeds", params={"language": "fr"}).json()}
+    assert speeds["1x"]["content_seconds"] == pytest.approx(600)
+    assert speeds["1.5x"]["content_seconds"] == pytest.approx(900)
+    assert speeds["1.5x"]["wall_clock_seconds"] == pytest.approx(600)
+
+
+def test_content_type_is_inherited_from_channel(client):
+    post(client, Player(recent_start()).play(60).pause().as_events("vid00000023", "session-ct23"))
+    post(client, Player(recent_start()).play(60).pause().as_events("vid00000024", "session-ct24"))
+    client.patch("/videos/vid00000023/settings", json={"content_type": "vlog"})
+    other = client.get("/videos/vid00000024").json()
+    assert other["content_type"] == "vlog" and other["content_type_source"] == "channel"
 
 
 def test_admin_rebuild_is_stable(client):

@@ -13,6 +13,34 @@
   "use strict";
 
   const ATTR = "data-ci-subtitles";
+  const AUDIO_ATTR = "data-ci-audio";
+
+  /**
+   * Los subtítulos automáticos (kind "asr") se generan del audio: su idioma ES el idioma
+   * hablado del video, aunque el usuario tenga los subtítulos apagados (v0.6).
+   * @param {any} player
+   * @returns {{ video_id: string, language: string } | null}
+   */
+  function readAudioHint(player) {
+    try {
+      if (typeof player.getPlayerResponse !== "function") return null;
+      const response = player.getPlayerResponse();
+      const videoId = response && response.videoDetails && response.videoDetails.videoId;
+      const renderer = response && response.captions && response.captions.playerCaptionsTracklistRenderer;
+      const tracks = (renderer && renderer.captionTracks) || [];
+      const asr = tracks.find((/** @type {any} */ t) => t.kind === "asr");
+      return videoId && asr && asr.languageCode ? { video_id: videoId, language: asr.languageCode } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** @param {HTMLElement} el @param {string} name @param {unknown} value */
+  function publish(el, name, value) {
+    const serialized = value == null ? null : JSON.stringify(value);
+    if (serialized === null) el.removeAttribute(name);
+    else if (el.getAttribute(name) !== serialized) el.setAttribute(name, serialized);
+  }
 
   /**
    * @param {any} player
@@ -42,7 +70,7 @@
   setInterval(() => {
     const player = document.getElementById("movie_player");
     if (!player) return;
-    const value = JSON.stringify(readSubtitles(player));
-    if (player.getAttribute(ATTR) !== value) player.setAttribute(ATTR, value);
+    publish(player, ATTR, readSubtitles(player));
+    publish(player, AUDIO_ATTR, readAudioHint(player));
   }, 1000);
 })();

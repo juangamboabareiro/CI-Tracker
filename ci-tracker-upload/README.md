@@ -4,16 +4,16 @@ Registra automáticamente cuánto contenido de YouTube consumís en cada idioma,
 del tiempo **realmente reproducido** (no de la duración de los videos).
 
 > Filosofía: la app mide **exposición**, no aprendizaje. *Watched/content time* son datos
-> registrados; la comprensibilidad es tu evaluación subjetiva y el "CI efectivo" (v0.4) será
-> una métrica derivada y aproximada. Nada de esto es evidencia científica de adquisición.
+> registrados; la comprensibilidad es tu evaluación subjetiva y el "CI efectivo" es una
+> métrica derivada y aproximada. Nada de esto es evidencia científica de adquisición.
 
-Versión actual: **v0.3** (ver [CHANGELOG.md](CHANGELOG.md)).
+Versión actual: **v0.7**, con todo el roadmap implementado (ver [CHANGELOG.md](CHANGELOG.md)).
 
 ## Arquitectura
 
 ```
 YouTube (pestaña)
-   │  page_bridge.js (MAIN world): lee la pista de subtítulos del reproductor
+   │  page_bridge.js (MAIN world): lee subtítulos activos + idioma del audio (subtítulos automáticos)
    │  content.js: polling 1 s del <video> → eventos play/progress/pause/seek/ended
    ▼
 Service worker (background.js): cola persistente en chrome.storage → lotes
@@ -33,17 +33,21 @@ LangMVP/
 ├─ backend/app/
 │  ├─ config.py      configuración centralizada (.env)
 │  ├─ database.py    engine, sesiones, create_all + mini-migración + idiomas iniciales
-│  ├─ models.py      Video, Language, ViewingSession, WatchEvent, WatchedSegment, UserVideoSettings
+│  ├─ models.py      Video, Language, ViewingSession, WatchEvent, WatchedSegment, UserVideoSettings, Goal
 │  ├─ schemas.py     contrato de la API (Pydantic)
 │  ├─ segments.py    ★ reconstrucción de segmentos y deduplicación (lógica pura)
 │  ├─ ingest.py      guarda eventos y recalcula la sesión
 │  ├─ youtube.py     cliente YouTube Data API
 │  ├─ metadata.py    caché de metadata (metadata_fetched_at)
-│  ├─ stats.py       agregaciones por día / idioma / subtítulos / comprensibilidad
-│  ├─ api.py         endpoints
+│  ├─ language_detection.py  detector liviano por alfabeto + palabras frecuentes (lógica pura)
+│  ├─ stats.py       resolución por video (idioma, subtítulos, puntaje, tipo) y agregaciones
+│  ├─ streaks.py     streaks (lógica pura)
+│  ├─ goals.py       progreso de objetivos
+│  ├─ routes/        endpoints: events, videos, stats, goals (+ deps compartidas)
 │  └─ main.py        app factory
 ├─ extension/        Chrome MV3 (manifest.json, content.js, page_bridge.js, background.js)
-├─ dashboard/        Streamlit (app.py, api_client.py)
+├─ dashboard/        Streamlit: app.py (pestañas), ui.py (formato/estilo), api_client.py,
+│                    views/ (summary, timeline, analytics, videos, goals)
 ├─ scripts/simulate_watch.py   simula la extensión (probar sin YouTube)
 └─ tests/
 ```
@@ -122,11 +126,22 @@ tocá ↻ y recargá YouTube.
 Se guardan dos métricas: **content_seconds** (cuánto contenido consumiste) y
 **wall_clock_seconds** (cuánto tiempo real te llevó).
 
-## Idioma
+## Idioma (detección automática, v0.6)
 
-Manual → `defaultAudioLanguage` de YouTube → idioma manual más usado en ese **canal**.
-Asignás un idioma una vez a un video de Easy French y los siguientes videos del canal se
-clasifican solos.
+Se usa la primera fuente disponible, de la más a la menos confiable:
+
+| # | Fuente | De dónde sale |
+|---|---|---|
+| 1 | `manual` | lo que asignaste en el dashboard (siempre gana) |
+| 2 | `youtube` | `defaultAudioLanguage` de la metadata (requiere API key) |
+| 3 | `captions` | idioma de los **subtítulos automáticos** de YouTube, que se generan del audio; la extensión lo lee aunque tengas los subtítulos apagados |
+| 4 | `channel` | idioma manual más usado en otros videos del mismo canal |
+| 5 | `text` | detector liviano sobre título + descripción ([language_detection.py](backend/app/language_detection.py)) |
+
+El detector de texto no usa IA ni dependencias: identifica el alfabeto (cirílico, kana,
+hangul, han, árabe) o cuenta palabras funcionales frecuentes ("le", "der", "the"...). Es
+conservador: si no hay suficiente evidencia no responde. El dashboard muestra de qué fuente
+salió el idioma de cada video.
 
 ## Subtítulos (v0.2)
 
@@ -159,8 +174,48 @@ evaluación personal, no una medida objetiva.
 - El Resumen muestra la **distribución** del tiempo visto: 90–100 %, 80–90 %, 70–80 %, < 70 %,
   sin puntuar.
 
-El puntaje es por video (no por tramo). El "CI efectivo" (tiempo × comprensibilidad) llega
-en la v0.4.
+El puntaje es por video (no por tramo).
+
+## CI efectivo (v0.4)
+
+Métrica **derivada y estimada**, que el dashboard muestra siempre separada del tiempo
+realmente visto:
+
+```
+CI efectivo = contenido visto × comprensibilidad        (60 min × 0.80 = 48 min)
+```
+
+- Se usa el **contenido** (no el tiempo real): 60 min de video a 1.5x con 80 % dan 48 min.
+- El tiempo **sin puntaje no suma** (no se inventa un valor). La **cobertura** indica qué parte
+  del contenido visto tiene puntaje y, por lo tanto, sobre cuánto se calculó.
+- Los puntajes estimados por canal sí cuentan.
+- En la API, todos los totales por período incluyen `effective_ci_seconds` y
+  `rated_content_seconds`, y cada video trae su `effective_ci_seconds` (`null` si no tiene puntaje).
+- En el dashboard aparece en el Resumen (total y por idioma, con cobertura), en el gráfico
+  (selector "Mostrar") y en el detalle de cada video.
+
+## Objetivos y streaks (v0.5)
+
+- **Streak:** un día cuenta si viste al menos `STREAK_THRESHOLD_SECONDS` (60 s por defecto).
+  Se muestra el streak actual y el récord, global y por idioma. Si hoy todavía no llegaste
+  pero ayer sí, el streak sigue vivo ("falta hoy").
+- **Objetivos** (pestaña Objetivos), por idioma o para todos, sobre contenido visto o CI efectivo:
+  - *total*: acumulado histórico, p. ej. 100 h de francés → `48.2 / 100 h`;
+  - *por día*: p. ej. 60 min/día → progreso de hoy, días cumplidos en los últimos 30 y racha.
+  Son metas tuyas: no se asume que sean lingüísticamente óptimas.
+- **Calendario** tipo GitHub (pestaña Evolución): un cuadro por día del último año, más
+  oscuro = más horas.
+
+## Análisis (v0.7)
+
+Pestaña **Análisis**, filtrable por idioma:
+
+- exposición por idioma (% del contenido total);
+- contenido consumido vs. tiempo real, y cuánto ganaste por mirar a más de 1x;
+- canales que más horas aportan (necesita API key para saber el canal);
+- tipo de contenido: se asigna en Videos → Detalle, y los otros videos del canal lo heredan;
+- velocidad de reproducción (horas a 1x, 1.25x, 1.5x...);
+- subtítulos y comprensibilidad.
 
 ## API
 
@@ -175,10 +230,16 @@ en la v0.4.
 | GET | `/stats/subtitles?language=fr` | tiempo por modo de subtítulos |
 | GET | `/stats/comprehensibility?language=fr` | tiempo por rango de comprensibilidad |
 | GET | `/stats/daily?days=30&language=fr` | serie diaria |
+| GET | `/stats/streaks?threshold_seconds=60` | streak global + uno por idioma |
+| GET | `/stats/channels?language=fr` | horas por canal |
+| GET | `/stats/content-types?language=fr` | horas por tipo de contenido |
+| GET | `/stats/speeds?language=fr` | horas por velocidad |
+| GET / POST | `/goals` | listar (con progreso) / crear `{"language": "fr", "period": "daily", "metric": "content", "target_seconds": 3600}` |
+| DELETE | `/goals/{id}` | borrar objetivo |
 | GET | `/videos?language=fr` | |
 | GET | `/videos/{id}` | detalle + sesiones + segmentos + desglose de subtítulos |
-| PATCH | `/videos/{id}/settings` | `{"language": "fr", "subtitle_mode": "none", "comprehensibility_score": 0.85}` |
-| POST | `/admin/rebuild` | recalcula todos los segmentos desde los eventos crudos |
+| PATCH | `/videos/{id}/settings` | `{"language": "fr", "subtitle_mode": "none", "comprehensibility_score": 0.85, "content_type": "podcast"}` |
+| POST | `/admin/rebuild` | recalcula segmentos (desde eventos crudos) e idioma por texto |
 
 En el `PATCH` solo cambian los campos enviados; `null` borra el valor manual. Fechas de la API: UTC.
 
@@ -191,6 +252,7 @@ En el `PATCH` solo cambian los campos enviados; `null` borra el valor manual. Fe
 | `TIMEZONE` | `UTC` | define "qué día" es cada sesión |
 | `NATIVE_LANGUAGE` | `es` | para clasificar subtítulos |
 | `CHANNEL_COMPREHENSIBILITY_FALLBACK` | `true` | estimar puntaje por canal |
+| `STREAK_THRESHOLD_SECONDS` | `60` | mínimo diario para que un día cuente en el streak |
 | `BACKEND_URL` | `http://127.0.0.1:8000` | lo usa el dashboard |
 
 ## Seguridad
@@ -206,14 +268,21 @@ habrá que sumar Alembic.
 
 ## Limitaciones conocidas
 
-- La detección de subtítulos usa la API interna del reproductor de YouTube (no es pública).
-  Si YouTube la cambia, cae a leer el botón "CC" (sin idioma) y, en el peor caso, a `unknown`.
-  El tracking de tiempo no se ve afectado.
+- La detección de subtítulos y del idioma del audio usa la API interna del reproductor de
+  YouTube (no es pública). Si YouTube la cambia, los subtítulos caen a leer el botón "CC" (sin
+  idioma) o a `unknown`, y el idioma del audio simplemente no se envía: quedan las otras
+  fuentes. El tracking de tiempo no se ve afectado.
+- El detector de idioma por texto es aproximado: con títulos muy cortos o mezclados puede no
+  responder o equivocarse. Una asignación manual siempre lo corrige.
+- Cirílico se asume ruso (no distingue ucraniano, búlgaro, etc.).
 - En Windows, los emojis de banderas se ven como letras ("FR"). Es cosa del sistema operativo.
 - El miniplayer (seguir viendo fuera de `/watch`) no se registra.
 - Si Chrome se cierra de golpe se pueden perder hasta ~15 s (el lote pendiente en la pestaña).
 
 ## Roadmap
 
-~~v0.1 MVP~~ ✓ · ~~v0.2 subtítulos~~ ✓ · ~~v0.3 comprensibilidad~~ ✓ · v0.4 CI efectivo
-· v0.5 objetivos + streaks · v0.6 detección automática de idioma · v0.7 analytics avanzados
+~~v0.1 MVP~~ ✓ · ~~v0.2 subtítulos~~ ✓ · ~~v0.3 comprensibilidad~~ ✓ · ~~v0.4 CI efectivo~~ ✓
+· ~~v0.5 objetivos + streaks~~ ✓ · ~~v0.6 detección automática de idioma~~ ✓ · ~~v0.7 analytics~~ ✓
+
+Ideas a futuro: otras fuentes (Netflix, Spotify, Twitch; el modelo ya usa `source` +
+`source_video_id`), puntuar desde un popup de la extensión, Postgres + Alembic.

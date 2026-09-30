@@ -24,7 +24,8 @@ const SEEK_TOLERANCE_S = 2;
  *   source: "youtube", video_id: string, session_id: string, seq: number,
  *   timestamp: string, current_time: number, playback_rate: number,
  *   paused: boolean, event: EventKind, page_title?: string,
- *   subtitles_on: boolean | null, subtitle_language: string | null
+ *   subtitles_on: boolean | null, subtitle_language: string | null,
+ *   audio_language_hint: string | null
  * }} WatchEvent
  * @typedef {{ videoId: string, sessionId: string, seq: number, last: Snapshot | null, lastEmittedAt: number }} Tracking
  */
@@ -76,6 +77,24 @@ function readSubtitles() {
   }
 }
 
+/**
+ * Idioma del audio según los subtítulos automáticos (publicado por page_bridge.js).
+ * Sólo se usa si corresponde al video que estamos registrando (en navegación SPA puede
+ * quedar un instante el del video anterior).
+ * @param {string} videoId
+ * @returns {string | null}
+ */
+function readAudioHint(videoId) {
+  const raw = document.querySelector("#movie_player")?.getAttribute("data-ci-audio");
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed.video_id === videoId && typeof parsed.language === "string" ? parsed.language : null;
+  } catch {
+    return null;
+  }
+}
+
 /** @param {Snapshot} a @param {Snapshot} b */
 function subtitlesChanged(a, b) {
   return a.subtitles.on !== b.subtitles.on || a.subtitles.language !== b.subtitles.language;
@@ -111,6 +130,7 @@ function emit(kind, snap) {
     page_title: pageTitle(),
     subtitles_on: snap.subtitles.on,
     subtitle_language: snap.subtitles.on ? snap.subtitles.language : null,
+    audio_language_hint: readAudioHint(tracking.videoId),
   });
   tracking.lastEmittedAt = snap.at;
 }
