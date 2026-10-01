@@ -43,9 +43,13 @@ def total(day: date, language: str, content: float, score: float | None = None) 
     return DailyTotal(day, 1, language, "none", content, content, score)
 
 
-def make_goal(period: str, target: float, language: str | None = None, metric: str = "content"):
+def make_goal(
+    period: str, target: float, language: str | None = None, metric: str = "content", baseline: float | None = None
+):
     lang = SimpleNamespace(code=language) if language else None
-    return SimpleNamespace(id=1, language=lang, period=period, metric=metric, target_seconds=target)
+    return SimpleNamespace(
+        id=1, language=lang, period=period, metric=metric, target_seconds=target, baseline_seconds=baseline
+    )
 
 
 def test_total_goal_progress_filters_language():
@@ -54,6 +58,14 @@ def test_total_goal_progress_filters_language():
     assert out.current_seconds == pytest.approx(5400)
     assert out.progress == pytest.approx(5400 / 360000)
     assert out.days_met_last_30 is None and out.streak is None
+
+
+def test_total_goal_adds_manual_baseline():
+    totals = [total(days_ago(1), "fr", 3600)]
+    out = goal_progress(make_goal("total", 100 * 3600, "fr", baseline=40 * 3600), totals, TODAY)
+    assert out.baseline_seconds == pytest.approx(40 * 3600)
+    assert out.current_seconds == pytest.approx(41 * 3600)
+    assert out.progress == pytest.approx(0.41)
 
 
 def test_daily_goal_progress_days_met_and_streak():

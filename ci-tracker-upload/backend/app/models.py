@@ -136,6 +136,9 @@ class Goal(Base):
     period: Mapped[str] = mapped_column(String(16))  # total | daily
     metric: Mapped[str] = mapped_column(String(16), default="content")  # content | effective_ci
     target_seconds: Mapped[float] = mapped_column(Float)
+    # Horas vistas antes de usar la app, estimadas a mano. Sólo objetivos totales.
+    # Suman al progreso del objetivo, NUNCA a las estadísticas medidas.
+    baseline_seconds: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
     language: Mapped[Language | None] = relationship()

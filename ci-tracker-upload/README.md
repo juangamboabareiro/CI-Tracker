@@ -200,7 +200,10 @@ CI efectivo = contenido visto × comprensibilidad        (60 min × 0.80 = 48 mi
   Se muestra el streak actual y el récord, global y por idioma. Si hoy todavía no llegaste
   pero ayer sí, el streak sigue vivo ("falta hoy").
 - **Objetivos** (pestaña Objetivos), por idioma o para todos, sobre contenido visto o CI efectivo:
-  - *total*: acumulado histórico, p. ej. 100 h de francés → `48.2 / 100 h`;
+  - *total*: acumulado histórico, p. ej. 100 h de francés → `48.2 / 100 h`. Opcionalmente
+    podés cargar las **horas que ya habías visto antes de usar la app** (tu estimación): se
+    suman al progreso de ese objetivo, se muestran aparte ("+ 30 h previas") y se pueden
+    editar. No afectan las estadísticas medidas;
   - *por día*: p. ej. 60 min/día → progreso de hoy, días cumplidos en los últimos 30 y racha.
   Son metas tuyas: no se asume que sean lingüísticamente óptimas.
 - **Calendario** tipo GitHub (pestaña Evolución): un cuadro por día del último año, más
@@ -235,6 +238,7 @@ Pestaña **Análisis**, filtrable por idioma:
 | GET | `/stats/content-types?language=fr` | horas por tipo de contenido |
 | GET | `/stats/speeds?language=fr` | horas por velocidad |
 | GET / POST | `/goals` | listar (con progreso) / crear `{"language": "fr", "period": "daily", "metric": "content", "target_seconds": 3600}` |
+| PATCH | `/goals/{id}` | editar `target_seconds` / `baseline_seconds` (horas previas, sólo totales) |
 | DELETE | `/goals/{id}` | borrar objetivo |
 | GET | `/videos?language=fr` | |
 | GET | `/videos/{id}` | detalle + sesiones + segmentos + desglose de subtítulos |

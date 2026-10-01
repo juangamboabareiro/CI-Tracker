@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.7.1 — Horas previas en objetivos
+- Los objetivos **totales** aceptan un campo opcional `baseline_seconds`: horas vistas antes
+  de usar la app, estimadas a mano. Se suman al progreso del objetivo, se muestran aparte
+  ("47.3 h medidas + 40.0 h previas") y nunca tocan las estadísticas medidas.
+- Nuevo `PATCH /goals/{id}` para editar la meta o las horas previas; en el dashboard está en
+  "Editar horas previas".
+- En objetivos diarios no aplica (la API responde 422).
+- Columna nueva `goals.baseline_seconds` (migración automática).
+
 ## v0.7 — Analytics
 - Nueva pestaña **Análisis**, filtrable por idioma:
   - exposición por idioma (%);

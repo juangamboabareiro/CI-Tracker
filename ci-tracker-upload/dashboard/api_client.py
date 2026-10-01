@@ -92,9 +92,21 @@ def get_goals() -> list[dict]:
     return _request("GET", "/goals")
 
 
-def create_goal(language: str | None, period: str, metric: str, target_seconds: float) -> dict:
-    payload = {"language": language, "period": period, "metric": metric, "target_seconds": target_seconds}
+def create_goal(
+    language: str | None, period: str, metric: str, target_seconds: float, baseline_seconds: float = 0.0
+) -> dict:
+    payload = {
+        "language": language,
+        "period": period,
+        "metric": metric,
+        "target_seconds": target_seconds,
+        "baseline_seconds": baseline_seconds,
+    }
     return _request("POST", "/goals", json=payload)
+
+
+def update_goal(goal_id: int, **changes) -> dict:
+    return _request("PATCH", f"/goals/{goal_id}", json=changes)
 
 
 def delete_goal(goal_id: int) -> None:

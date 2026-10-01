@@ -3,7 +3,8 @@
 Los objetivos son simplemente metas que define el usuario; no se asume que sean
 lingüísticamente óptimos.
 
-  * total: acumulado histórico de la métrica vs. objetivo (p. ej. 100 h de francés).
+  * total: acumulado histórico de la métrica + horas previas estimadas a mano (lo visto
+    antes de usar la app) vs. objetivo (p. ej. 100 h de francés).
   * daily: lo de hoy vs. objetivo diario (p. ej. 60 min/día), cuántos de los últimos
     30 días se cumplió y el streak de días seguidos cumpliéndolo.
 """
@@ -23,8 +24,9 @@ def goal_progress(goal: Goal, totals: list[DailyTotal], today: date) -> GoalOut:
     by_day = seconds_by_day(filter_language(totals, language), METRIC_FIELDS[goal.metric])
 
     days_met = streak = None
+    baseline = goal.baseline_seconds or 0.0
     if goal.period == GoalPeriod.total.value:
-        current = sum(v for d, v in by_day.items() if d <= today)
+        current = baseline + sum(v for d, v in by_day.items() if d <= today)
     else:
         current = by_day.get(today, 0.0)
         window = [today - timedelta(days=i) for i in range(30)]
@@ -37,6 +39,7 @@ def goal_progress(goal: Goal, totals: list[DailyTotal], today: date) -> GoalOut:
         period=goal.period,
         metric=goal.metric,
         target_seconds=goal.target_seconds,
+        baseline_seconds=baseline,
         current_seconds=current,
         progress=current / goal.target_seconds,
         met=current >= goal.target_seconds,

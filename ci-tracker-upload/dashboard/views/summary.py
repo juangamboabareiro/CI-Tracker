@@ -5,7 +5,7 @@ import streamlit as st
 
 import api_client as api
 from ui import EFFECTIVE_DISCLAIMER, fmt_coverage, fmt_effective, fmt_hm, label
-from views.goals import goal_label, goal_value
+from views.goals import baseline_note, goal_label, goal_value
 
 
 def render(summary: dict) -> None:
@@ -45,6 +45,7 @@ def _render_goals(goals: list[dict], names: dict[str, str]) -> None:
         text = f"{goal_label(goal, names)}: {current} / {target} ({goal['progress']:.0%})"
         if goal["met"]:
             text += " ✓"
+        text += baseline_note(goal)
         st.progress(min(goal["progress"], 1.0), text=text)
 
 

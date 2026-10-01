@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class EventType(str, Enum):
@@ -213,11 +213,31 @@ class GoalMetric(str, Enum):
     effective_ci = "effective_ci"
 
 
+MAX_GOAL_SECONDS = 100_000 * 3600
+
+
 class GoalIn(BaseModel):
     language: str | None = Field(default=None, max_length=16, description="None = todos los idiomas.")
     period: GoalPeriod
     metric: GoalMetric = GoalMetric.content
-    target_seconds: float = Field(gt=0, le=10_000 * 3600)
+    target_seconds: float = Field(gt=0, le=MAX_GOAL_SECONDS)
+    baseline_seconds: float = Field(
+        default=0.0, ge=0, le=MAX_GOAL_SECONDS,
+        description="Horas vistas antes de usar la app (estimación manual). Sólo objetivos totales.",
+    )
+
+    @model_validator(mode="after")
+    def _baseline_only_for_total(self) -> "GoalIn":
+        if self.period == GoalPeriod.daily and self.baseline_seconds > 0:
+            raise ValueError("baseline_seconds sólo aplica a objetivos totales")
+        return self
+
+
+class GoalUpdate(BaseModel):
+    """PATCH: sólo cambian los campos enviados."""
+
+    target_seconds: float | None = Field(default=None, gt=0, le=MAX_GOAL_SECONDS)
+    baseline_seconds: float | None = Field(default=None, ge=0, le=MAX_GOAL_SECONDS)
 
 
 class GoalOut(BaseModel):
@@ -226,7 +246,8 @@ class GoalOut(BaseModel):
     period: GoalPeriod
     metric: GoalMetric
     target_seconds: float
-    current_seconds: float = Field(description="Total acumulado (total) o lo de hoy (daily).")
+    baseline_seconds: float = Field(description="Horas previas estimadas (incluidas en current_seconds).")
+    current_seconds: float = Field(description="Total acumulado + previas (total) o lo de hoy (daily).")
     progress: float = Field(description="current / target (puede superar 1).")
     met: bool
     days_met_last_30: int | None = Field(description="Sólo objetivos diarios.")

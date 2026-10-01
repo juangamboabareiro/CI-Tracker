@@ -231,6 +231,30 @@ def test_goals_crud_and_progress(client):
     assert client.post("/goals", json={"language": "xx", "period": "daily", "target_seconds": 60}).status_code == 422
 
 
+def test_goal_baseline_create_edit_and_validation(client):
+    post(client, Player(recent_start()).play(1800).pause().as_events("vid00000025", "session-base25"))
+    client.patch("/videos/vid00000025/settings", json={"language": "fr"})
+
+    goal = client.post(
+        "/goals", json={"language": "fr", "period": "total", "target_seconds": 100 * 3600, "baseline_seconds": 30 * 3600}
+    ).json()
+    assert goal["baseline_seconds"] == pytest.approx(30 * 3600)
+    assert goal["current_seconds"] == pytest.approx(30 * 3600 + 1800)
+
+    edited = client.patch(f"/goals/{goal['id']}", json={"baseline_seconds": 50 * 3600}).json()
+    assert edited["current_seconds"] == pytest.approx(50 * 3600 + 1800)
+
+    # Las horas previas no tocan las estadísticas medidas.
+    french = next(s for s in client.get("/stats/summary").json()["languages"] if s["language"] == "fr")
+    assert french["all_time"]["content_seconds"] == pytest.approx(1800)
+
+    daily = {"language": "fr", "period": "daily", "target_seconds": 3600, "baseline_seconds": 3600}
+    assert client.post("/goals", json=daily).status_code == 422
+    daily_goal = client.post("/goals", json=daily | {"baseline_seconds": 0}).json()
+    assert client.patch(f"/goals/{daily_goal['id']}", json={"baseline_seconds": 60}).status_code == 422
+    assert client.patch("/goals/9999", json={"target_seconds": 60}).status_code == 404
+
+
 def test_streaks_endpoint(client):
     post(client, Player(recent_start()).play(120).pause().as_events("vid00000019", "session-str19"))
     client.patch("/videos/vid00000019/settings", json={"language": "de"})
